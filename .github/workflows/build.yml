@@ -8,6 +8,7 @@ on:
       - master
       - dev
       - go-rewrite
+      - windows-automation-features
     tags:
       - "v*"
 
