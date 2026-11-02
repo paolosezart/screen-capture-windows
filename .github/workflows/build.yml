@@ -36,6 +36,10 @@ jobs:
           go env GOOS GOARCH
           Write-Host "Commit: ${{ github.sha }}"
 
+      - name: Run Go unit tests
+        shell: pwsh
+        run: go test ./... -v
+
       - name: Build standalone Windows x64 executable
         shell: pwsh
         run: |
