@@ -39,8 +39,12 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force .\publish | Out-Null
-          go build -trimpath -ldflags="-s -w" -o .\publish\ScreenShotCli.exe .
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -trimpath -ldflags="-s -w" -o .\publish\ScreenShotCli.exe . *> build.log
+          $buildExitCode = $LASTEXITCODE
+          if (Test-Path .\build.log) { Get-Content .\build.log }
+          if ($buildExitCode -ne 0) { exit $buildExitCode }
+          $exe = Get-Item .\publish\ScreenShotCli.exe
+          Write-Host ("EXE size: {0:N0} bytes ({1:N2} MiB)" -f $exe.Length, ($exe.Length / 1MB))
 
       - name: Package EXE and create checksum
         shell: pwsh
