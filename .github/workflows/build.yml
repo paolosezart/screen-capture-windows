@@ -1,0 +1,31 @@
+name: Build ScreenShotCli
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish self-contained Windows x64 EXE
+        shell: pwsh
+        run: dotnet publish .\ScreenShotCli.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false --output .\publish\win-x64
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ScreenShotCli-win-x64
+          path: publish/win-x64/ScreenShotCli.exe
+          if-no-files-found: error
+          retention-days: 30
