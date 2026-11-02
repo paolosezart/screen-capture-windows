@@ -1,4 +1,4 @@
-name: Build ScreenShotCli
+name: Build ScreenShotCli (Go)
 
 on:
   workflow_dispatch:
@@ -7,6 +7,7 @@ on:
       - main
       - master
       - dev
+      - go-rewrite
     tags:
       - "v*"
 
@@ -21,29 +22,34 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install .NET SDK
-        uses: actions/setup-dotnet@v4
+      - name: Install Go
+        uses: actions/setup-go@v5
         with:
-          dotnet-version: 8.0.x
+          go-version: "1.23.x"
+          cache: true
 
       - name: Show build environment
         shell: pwsh
         run: |
-          dotnet --info
+          go version
+          go env GOOS GOARCH
           Write-Host "Commit: ${{ github.sha }}"
 
-      - name: Restore dependencies
+      - name: Build standalone Windows x64 executable
         shell: pwsh
-        run: dotnet restore .\ScreenShotCli.csproj
-
-      - name: Publish self-contained Windows x64 EXE
-        shell: pwsh
-        run: dotnet publish .\ScreenShotCli.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false --output .\publish\win-x64
+        run: |
+          New-Item -ItemType Directory -Force .\publish | Out-Null
+          go build -trimpath -ldflags="-s -w" -o .\publish\ScreenShotCli.exe . *> build.log
+          $buildExitCode = $LASTEXITCODE
+          if (Test-Path .\build.log) { Get-Content .\build.log }
+          if ($buildExitCode -ne 0) { exit $buildExitCode }
+          $exe = Get-Item .\publish\ScreenShotCli.exe
+          Write-Host ("EXE size: {0:N0} bytes ({1:N2} MiB)" -f $exe.Length, ($exe.Length / 1MB))
 
       - name: Package EXE and create checksum
         shell: pwsh
         run: |
-          Compress-Archive -Path .\publish\win-x64\ScreenShotCli.exe -DestinationPath .\publish\ScreenShotCli-win-x64.zip -Force
+          Compress-Archive -Path .\publish\ScreenShotCli.exe -DestinationPath .\publish\ScreenShotCli-win-x64.zip -Force
           $hash = (Get-FileHash .\publish\ScreenShotCli-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  ScreenShotCli-win-x64.zip" | Set-Content .\publish\SHA256SUMS.txt -Encoding utf8
 
@@ -57,18 +63,23 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Upload diagnostic logs
-        if: always()
-        uses: actions/upload-artifact@v4
+      - name: Publish latest continuous build
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
         with:
-          name: build-diagnostics-${{ github.run_id }}
-          path: |
-            restore.log
-            build.log
-          if-no-files-found: ignore
-          retention-days: 7
+          tag_name: continuous
+          target_commitish: ${{ github.sha }}
+          name: Latest continuous build
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
+          files: |
+            publish/ScreenShotCli-win-x64.zip
+            publish/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish stable GitHub Release
+      - name: Publish stable versioned release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
@@ -79,3 +90,12 @@ jobs:
             publish/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-${{ github.run_id }}
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
