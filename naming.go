@@ -55,7 +55,7 @@ func expandOutputTemplate(input, title, process, replacement string, now time.Ti
 	values := map[string]string{
 		"YYYY": now.Format("2006"), "MM": now.Format("01"), "dd": now.Format("02"),
 		"HH": now.Format("15"), "mm": now.Format("04"), "ss": now.Format("05"),
-		"MS": now.Format("000"), "timestamp": fmt.Sprintf("%d", now.Unix()),
+		"MS": fmt.Sprintf("%03d", now.Nanosecond()/1e6), "timestamp": fmt.Sprintf("%d", now.Unix()),
 		"window-title": filenameToken(title, replacement),
 		"Windows title": filenameToken(title, replacement),
 		"Windows tittle": filenameToken(title, replacement),
