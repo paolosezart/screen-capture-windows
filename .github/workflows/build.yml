@@ -1,31 +1,161 @@
-name: Build ScreenShotCli
+name: Universal Build
 
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "dev"]
     tags: ["v*"]
 
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: universal-build-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    name: Build Windows x64
     runs-on: windows-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+
       - name: Install .NET SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Publish self-contained Windows x64 EXE
+
+      - name: Show build environment
         shell: pwsh
-        run: dotnet publish .\ScreenShotCli.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false --output .\publish\win-x64
-      - name: Upload EXE artifact
+        run: |
+          dotnet --info
+          Write-Host "Runner: $env:RUNNER_OS / $env:RUNNER_ARCH"
+          Write-Host "Commit: ${{ github.sha }}"
+
+      - name: Restore dependencies
+        shell: pwsh
+        run: |
+          dotnet restore .\ScreenShotCli.csproj *> restore.log
+          $code = $LASTEXITCODE
+          Get-Content restore.log
+          if ($code -ne 0) { exit $code }
+
+      - name: Publish self-contained Windows x64 EXE
+        id: publish
+        shell: pwsh
+        run: |
+          dotnet publish .\ScreenShotCli.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:DebugType=None -p:DebugSymbols=false --output .\publish\win-x64 *> build.log
+          $code = $LASTEXITCODE
+          Get-Content build.log
+          if ($code -ne 0) { exit $code }
+
+      - name: Package and checksum
+        if: success()
+        shell: pwsh
+        run: |
+          Compress-Archive -Path .\publish\win-x64\ScreenShotCli.exe -DestinationPath .\publish\ScreenShotCli-win-x64.zip -Force
+          $hash = (Get-FileHash .\publish\ScreenShotCli-win-x64.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  ScreenShotCli-win-x64.zip" | Set-Content .\publish\SHA256SUMS.txt -Encoding utf8NoBOM
+
+      - name: Upload build artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: ScreenShotCli-win-x64
-          path: publish/win-x64/ScreenShotCli.exe
+          path: |
+            publish/ScreenShotCli-win-x64.zip
+            publish/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics-${{ github.run_id }}
+          path: |
+            restore.log
+            build.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Publish GitHub Release
+        if: success() && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/dev')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('build-{0}-{1}', github.run_number, github.sha) }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && format('Release {0}', github.ref_name) || format('Continuous build #{0}', github.run_number) }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+          make_latest: ${{ startsWith(github.ref, 'refs/tags/v') && 'true' || 'false' }}
+          generate_release_notes: true
+          files: |
+            publish/ScreenShotCli-win-x64.zip
+            publish/SHA256SUMS.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write failure report to ci-feedback
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'reports/latest.md';
+            const readLog = (name) => {
+              try {
+                return fs.readFileSync(name, 'utf8').split(/\r?\n/).slice(-160).join('\n');
+              } catch {
+                return '(log file was not created)';
+              }
+            };
+            let details = [
+              '## Restore output',
+              '~~~text',
+              readLog('restore.log'),
+              '~~~',
+              '## Build output',
+              '~~~text',
+              readLog('build.log'),
+              '~~~'
+            ].join('\n');
+            details = details
+              .replace(/(gh[pousr]_[A-Za-z0-9_]{20,})/g, '[REDACTED_TOKEN]')
+              .replace(/(github_pat_[A-Za-z0-9_]{20,})/g, '[REDACTED_TOKEN]')
+              .replace(/(Bearer\s+)[A-Za-z0-9._-]+/gi, '$1[REDACTED]')
+              .replace(/((?:password|passwd|token|secret)\s*[:=]\s*)[^\s]+/gi, '$1[REDACTED]');
+            const body = [
+              '# Latest CI failure',
+              '',
+              '- Repository: ' + context.repo.owner + '/' + context.repo.repo,
+              '- Workflow run: ' + context.serverUrl + '/' + context.repo.owner + '/' + context.repo.repo + '/actions/runs/' + context.runId,
+              '- Commit: ' + context.sha,
+              '- Ref: ' + context.ref,
+              '- Event: ' + context.eventName,
+              '- Runner: ' + process.env.RUNNER_OS + ' / ' + process.env.RUNNER_ARCH,
+              '- Time (UTC): ' + new Date().toISOString(),
+              '',
+              '> This is a sanitized diagnostic excerpt. Full logs remain in the Actions artifact.',
+              '',
+              details,
+              ''
+            ].join('\n');
+            const branch = 'ci-feedback';
+            let sha;
+            try {
+              const existing = await github.rest.repos.getContent({
+                ...context.repo, path, ref: branch
+              });
+              if (!Array.isArray(existing.data)) sha = existing.data.sha;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            await github.rest.repos.createOrUpdateFileContents({
+              ...context.repo,
+              path,
+              message: 'ci: update latest sanitized build failure report',
+              branch,
+              sha,
+              content: Buffer.from(body, 'utf8').toString('base64')
+            });
