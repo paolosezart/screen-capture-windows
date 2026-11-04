@@ -95,7 +95,7 @@ func run() error {
 		flag.PrintDefaults()
 		fmt.Fprintln(flag.CommandLine.Output(), "")
 		fmt.Fprintln(flag.CommandLine.Output(), "Шаблоны имени: [YYYY] [MM] [dd] [HH] [mm] [ss] [MS] [timestamp].")
-		fmt.Fprintln(flag.CommandLine.Output(), "Переменные окружения: %TEMP%, %USERPROFILE% и другие существующие переменные.")
+		fmt.Fprintln(flag.CommandLine.Output(), "Переменные окружения: "+string(rune(37))+"TEMP"+string(rune(37))+", "+string(rune(37))+"USERPROFILE"+string(rune(37))+" и другие существующие переменные.")
 		fmt.Fprintln(flag.CommandLine.Output(), "Если имя уже занято, добавляется -conflict01, -conflict02 и т.д.")
 		fmt.Fprintln(flag.CommandLine.Output(), "Папки назначения автоматически не создаются.")
 	}
