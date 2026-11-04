@@ -42,7 +42,7 @@ var (
 	procDeleteObject = gdi32.NewProc("DeleteObject")
 	procSelectObject = gdi32.NewProc("SelectObject")
 	procBitBlt = gdi32.NewProc("BitBlt")
-	procGetDIBits = gdi32.NewProc("GetDIBits")
+	procCreateDIBSection = gdi32.NewProc("CreateDIBSection")
 	procGetLastError = kernel32.NewProc("GetLastError")
 )
 
@@ -79,8 +79,8 @@ func run() error {
 
 	x := flag.Int("x", 0, "X-координата области")
 	y := flag.Int("y", 0, "Y-координата области")
-	width := flag.Int("width", 800, "ширина области в пикселях")
-	height := flag.Int("height", 600, "высота области в пикселях")
+	width := flag.Int("width", 0, "ширина области в пикселях; без --width/--height захватывается весь виртуальный экран")
+	height := flag.Int("height", 0, "высота области в пикселях; без --width/--height захватывается весь виртуальный экран")
 	output := flag.String("output", "screenshot.png", "путь для сохранения PNG")
 	flag.StringVar(output, "o", "screenshot.png", "сокращение для --output")
 	overwrite := flag.Bool("overwrite", false, "разрешить перезапись существующего файла")
@@ -120,6 +120,12 @@ func run() error {
 	}
 	flag.Parse()
 
+	widthSet, heightSet := false, false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "width" { widthSet = true }
+		if f.Name == "height" { heightSet = true }
+	})
+
 	if *showVersion {
 		fmt.Println("ScreenShotCli", version)
 		return nil
@@ -138,6 +144,15 @@ func run() error {
 	}
 	windowCapture := *activeWindow || *windowTitle != "" || *processName != ""
 	if !windowCapture {
+		if widthSet != heightSet {
+			return errors.New("--width и --height нужно задавать вместе; без них захватывается весь виртуальный экран")
+		}
+		if !widthSet {
+			*x = getSystemMetric(smXVirtualScreen)
+			*y = getSystemMetric(smYVirtualScreen)
+			*width = getSystemMetric(smCXVirtualScreen)
+			*height = getSystemMetric(smCYVirtualScreen)
+		}
 		if *width <= 0 || *height <= 0 {
 			return errors.New("--width и --height должны быть больше нуля")
 		}
@@ -279,32 +294,23 @@ func getSystemMetric(index int) int {
 	return int(int32(value))
 }
 
-func capture(x, y, width, height int) (*image.RGBA, error) {
-	screenDC, _, _ := procGetDC.Call(0)
-	if screenDC == 0 { return nil, lastError("GetDC") }
-	defer procReleaseDC.Call(0, screenDC)
-	memoryDC, _, _ := procCreateCompatibleDC.Call(screenDC)
-	if memoryDC == 0 { return nil, lastError("CreateCompatibleDC") }
-	defer procDeleteDC.Call(memoryDC)
-	bitmap, _, _ := procCreateCompatibleBitmap.Call(screenDC, uintptr(width), uintptr(height))
-	if bitmap == 0 { return nil, lastError("CreateCompatibleBitmap") }
-	defer procDeleteObject.Call(bitmap)
-	oldObject, _, _ := procSelectObject.Call(memoryDC, bitmap)
-	if oldObject == 0 || oldObject == ^uintptr(0) { return nil, lastError("SelectObject") }
-	ok, _, _ := procBitBlt.Call(memoryDC, 0, 0, uintptr(width), uintptr(height), screenDC, uintptr(int64(x)), uintptr(int64(y)), srccopy|captureBLT)
-	if ok == 0 {
-		procSelectObject.Call(memoryDC, oldObject)
-		return nil, lastError("BitBlt")
-	}
-	procSelectObject.Call(memoryDC, oldObject)
+func createDIBBitmap(dc uintptr, width, height int) (uintptr, []byte, error) {
 	pixels := make([]byte, width*height*4)
 	info := bitmapInfo{Header: bitmapInfoHeader{
-		Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(width), Height: -int32(height),
-		Planes: 1, BitCount: 32, Compression: biRGB, SizeImage: uint32(len(pixels)),
+		Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})),
+		Width: int32(width), Height: -int32(height),
+		Planes: 1, BitCount: 32, Compression: biRGB,
+		SizeImage: uint32(len(pixels)),
 	}}
-	lines, _, _ := procGetDIBits.Call(memoryDC, bitmap, 0, uintptr(height), uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), dibRGBColors)
-	if lines == 0 { return nil, lastError("GetDIBits") }
-	if lines != uintptr(height) { return nil, fmt.Errorf("GetDIBits вернул %d строк вместо %d", lines, height) }
+	var bits uintptr
+	bitmap, _, _ := procCreateDIBSection.Call(dc, uintptr(unsafe.Pointer(&info)), dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
+	if bitmap == 0 || bits == 0 {
+		return 0, nil, lastError("CreateDIBSection")
+	}
+	return bitmap, unsafe.Slice((*byte)(unsafe.Pointer(bits)), len(pixels)), nil
+}
+
+func imageFromBGRA(pixels []byte, width, height int) *image.RGBA {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	for i := 0; i < len(pixels); i += 4 {
 		img.Pix[i] = pixels[i+2]
@@ -312,7 +318,29 @@ func capture(x, y, width, height int) (*image.RGBA, error) {
 		img.Pix[i+2] = pixels[i]
 		img.Pix[i+3] = 255
 	}
-	return img, nil
+	return img
+}
+
+func capture(x, y, width, height int) (*image.RGBA, error) {
+	screenDC, _, _ := procGetDC.Call(0)
+	if screenDC == 0 { return nil, lastError("GetDC") }
+	defer procReleaseDC.Call(0, screenDC)
+
+	memoryDC, _, _ := procCreateCompatibleDC.Call(screenDC)
+	if memoryDC == 0 { return nil, lastError("CreateCompatibleDC") }
+	defer procDeleteDC.Call(memoryDC)
+
+	bitmap, pixels, err := createDIBBitmap(screenDC, width, height)
+	if err != nil { return nil, err }
+	defer procDeleteObject.Call(bitmap)
+
+	oldObject, _, _ := procSelectObject.Call(memoryDC, bitmap)
+	if oldObject == 0 || oldObject == ^uintptr(0) { return nil, lastError("SelectObject") }
+	defer procSelectObject.Call(memoryDC, oldObject)
+
+	ok, _, _ := procBitBlt.Call(memoryDC, 0, 0, uintptr(width), uintptr(height), screenDC, uintptr(int64(x)), uintptr(int64(y)), srccopy|captureBLT)
+	if ok == 0 { return nil, lastError("BitBlt") }
+	return imageFromBGRA(pixels, width, height), nil
 }
 
 func lastError(operation string) error {
