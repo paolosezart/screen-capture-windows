@@ -12,7 +12,6 @@ import (
 var envPattern = regexp.MustCompile("%([^%]+)%")
 var templatePattern = regexp.MustCompile("\\[(YYYY|MM|dd|HH|mm|ss|MS|timestamp|window-title|Windows title|Windows tittle|process)\\]")
 
-// filenameToken replaces characters forbidden by Windows or Linux with a visible ASCII marker.
 func filenameToken(value, replacement string) string {
 	var b strings.Builder
 	for _, r := range value {
@@ -34,7 +33,6 @@ func filenameToken(value, replacement string) string {
 	return value
 }
 
-// expandOutputTemplate expands %ENV% and supported [tokens] using one timestamp.
 func expandOutputTemplate(input, title, process, replacement string, now time.Time) (string, error) {
 	if replacement == "" {
 		return "", fmt.Errorf("--sanitize-char не может быть пустым")
@@ -62,20 +60,20 @@ func expandOutputTemplate(input, title, process, replacement string, now time.Ti
 		"process": filenameToken(process, replacement),
 	}
 	return templatePattern.ReplaceAllStringFunc(expanded, func(token string) string {
-		key := token[1 : len(token)-1]
-		return values[key]
+		return values[token[1:len(token)-1]]
 	}), nil
 }
 
-// reserveOutputPath atomically reserves a unique output filename. Caller must remove
-// the placeholder if it later decides not to write the file.
-func reserveOutputPath(requested string, overwrite bool) (string, error) {
+// createOutputFile opens the final file atomically. Without overwrite it chooses
+// -conflictNN; with overwrite it truncates the requested path.
+func createOutputFile(requested string, overwrite bool) (*os.File, string, error) {
 	absolute, err := filepath.Abs(requested)
 	if err != nil {
-		return "", err
+		return nil, "", err
 	}
 	if overwrite {
-		return absolute, nil
+		f, err := os.OpenFile(absolute, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		return f, absolute, err
 	}
 	dir, name := filepath.Dir(absolute), filepath.Base(absolute)
 	ext := filepath.Ext(name)
@@ -87,14 +85,10 @@ func reserveOutputPath(requested string, overwrite bool) (string, error) {
 		}
 		f, createErr := os.OpenFile(candidate, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
 		if createErr == nil {
-			if closeErr := f.Close(); closeErr != nil {
-				_ = os.Remove(candidate)
-				return "", closeErr
-			}
-			return candidate, nil
+			return f, candidate, nil
 		}
 		if !os.IsExist(createErr) {
-			return "", createErr
+			return nil, "", createErr
 		}
 	}
 }
