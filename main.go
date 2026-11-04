@@ -99,8 +99,8 @@ func run() error {
 		fmt.Fprintln(flag.CommandLine.Output(), "Основные параметры:")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --x int                 X-координата области (по умолчанию 0)")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --y int                 Y-координата области (по умолчанию 0)")
-		fmt.Fprintln(flag.CommandLine.Output(), "  --width int             ширина области в пикселях (по умолчанию 800)")
-		fmt.Fprintln(flag.CommandLine.Output(), "  --height int            высота области в пикселях (по умолчанию 600)")
+		fmt.Fprintln(flag.CommandLine.Output(), "  --width int             ширина области; без --width/--height — весь виртуальный экран")
+		fmt.Fprintln(flag.CommandLine.Output(), "  --height int            высота области; без --width/--height — весь виртуальный экран")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --output string, -o     путь для сохранения PNG (по умолчанию screenshot.png)")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --overwrite             разрешить перезапись существующего файла")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --sanitize-char string  замена недопустимых символов (по умолчанию [!])")
@@ -295,19 +295,19 @@ func getSystemMetric(index int) int {
 }
 
 func createDIBBitmap(dc uintptr, width, height int) (uintptr, []byte, error) {
-	pixels := make([]byte, width*height*4)
+	pixelBytes := width * height * 4
 	info := bitmapInfo{Header: bitmapInfoHeader{
 		Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})),
 		Width: int32(width), Height: -int32(height),
 		Planes: 1, BitCount: 32, Compression: biRGB,
-		SizeImage: uint32(len(pixels)),
+		SizeImage: uint32(pixelBytes),
 	}}
 	var bits uintptr
 	bitmap, _, _ := procCreateDIBSection.Call(dc, uintptr(unsafe.Pointer(&info)), dibRGBColors, uintptr(unsafe.Pointer(&bits)), 0, 0)
 	if bitmap == 0 || bits == 0 {
 		return 0, nil, lastError("CreateDIBSection")
 	}
-	return bitmap, unsafe.Slice((*byte)(unsafe.Pointer(bits)), len(pixels)), nil
+	return bitmap, unsafe.Slice((*byte)(unsafe.Pointer(bits)), pixelBytes), nil
 }
 
 func imageFromBGRA(pixels []byte, width, height int) *image.RGBA {
