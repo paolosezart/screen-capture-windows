@@ -61,7 +61,7 @@ ScreenShotCli.exe --version
 
 ## Захват активного окна и задержка
 
-Захватить активное окно целиком:
+Найти окно по части заголовка (поиск без учёта регистра) и захватить его, даже если оно не активно:\n\n~~~bat\nScreenShotCli.exe --window-title "Блокнот" -o "notepad.png"\n~~~\n\nНайти окно по имени EXE-процесса (точное совпадение имени файла):\n\n~~~bat\nScreenShotCli.exe --process "notepad.exe" -o "notepad.png"\n~~~\n\nПараметры `--window-title` и `--process` взаимоисключающие; их нельзя сочетать с `--active-window`. Если найдено несколько подходящих окон, выбирается первое видимое окно в порядке перечисления Windows.\n\nЗахватить активное окно целиком:
 
 ~~~bat
 ScreenShotCli.exe --active-window --output "%USERPROFILE%\Pictures\\active-[YYYY][MM][dd]_[HH][mm][ss].png"
@@ -90,7 +90,7 @@ ScreenShotCli.exe --active-window --delay 5 --output "%USERPROFILE%\Pictures\\wi
 | --output, -o | screenshot.png | Путь и имя выходного PNG |
 | --overwrite | выключен | Разрешить перезапись файла с указанным именем |
 | --sanitize-char | [!] | Замена недопустимых символов в динамических частях имени |
-| --active-window | выключен | Захватить активное окно вместо области рабочего стола |
+| --active-window | выключен | Захватить активное окно вместо области рабочего стола |\n| --window-title | — | Найти видимое окно по части заголовка (без учёта регистра) |\n| --process | — | Найти видимое окно по точному имени EXE-процесса |
 | --delay | 0 | Подождать указанное число секунд перед захватом (0–3600) |
 | --version | — | Показать версию программы |
 | --help, -h | — | Показать справку |
@@ -146,7 +146,7 @@ ScreenShotCli.exe --x 0 --y 0 --width 800 --height 600 -o "shot.png" --overwrite
 
 Также поддерживаются переменные окружения в формате Windows: %TEMP%, %USERPROFILE% и другие существующие переменные. Неопределённая переменная считается ошибкой.
 
-Для режима --active-window токены [window-title], [Windows title] и [Windows tittle] заменяются заголовком захваченного окна. Токен [process] пока содержит имя ScreenShotCli.exe; получение имени процесса целевого окна будет добавлено отдельно.
+Для режимов --active-window, --window-title и --process токены [window-title], [Windows title] и [Windows tittle] заменяются заголовком захваченного окна. Токен [process] пока содержит имя ScreenShotCli.exe; токен [process] пока содержит имя ScreenShotCli.exe; имя процесса выбранного окна будет добавлено отдельно.
 
 Недопустимые для имени файла Windows символы и управляющие символы заменяются значением --sanitize-char. По умолчанию используется [!]. Зарезервированные имена Windows (например, CON, NUL, COM1) также обрабатываются.
 
