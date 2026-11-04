@@ -12,7 +12,7 @@ func TestExpandOutputTemplate(t *testing.T) {
 	now := time.Date(2026, 11, 2, 19, 8, 7, 123000000, time.Local)
 	got, err := expandOutputTemplate("%SCREENSHOTCLI_TEST_ROOT%\\Screen-[YYYY]-[MM]-[dd]_[HH]-[mm]-[ss]-[MS]-[window-title]-[process].png", `Doc: C:\Work\a*.txt`, "notepad.exe", "[!]", now)
 	if err != nil { t.Fatal(err) }
-	for _, part := range []string{"C:\\Screenshots", "2026-11-02_19-08-07-123", "Doc[!] C[!]Work[!]a[!].txt", "notepad.exe"} {
+	for _, part := range []string{"C:\\Screenshots", "2026-11-02_19-08-07-123", "Doc[!] C[!][!]Work[!]a[!].txt", "notepad.exe"} {
 		if !strings.Contains(got, part) { t.Fatalf("result %q does not contain %q", got, part) }
 	}
 }
