@@ -70,7 +70,7 @@ jobs:
           retention-days: 30
 
       - name: Publish latest continuous build
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/windows-automation-features'
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/windows-automation-features' || github.ref == 'refs/heads/active-window-capture'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: continuous
