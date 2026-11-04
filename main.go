@@ -24,7 +24,7 @@ const (
 	captureBLT = 0x40000000
 	dibRGBColors = 0
 	biRGB = 0
-	version = "0.2.0-dev"
+	version = "0.3.0"
 )
 
 var (
