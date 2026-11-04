@@ -75,7 +75,7 @@ jobs:
         with:
           tag_name: continuous
           target_commitish: ${{ github.sha }}
-          name: Latest continuous build
+          name: ScreenShotCli Continuous (preview)
           prerelease: true
           make_latest: false
           overwrite_files: true
@@ -89,8 +89,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          name: Release ${{ github.ref_name }}
+          name: ScreenShotCli ${{ github.ref_name }}
           generate_release_notes: true
+          make_latest: true
           files: |
             publish/ScreenShotCli-win-x64.zip
             publish/SHA256SUMS.txt
