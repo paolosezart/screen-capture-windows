@@ -26,12 +26,26 @@ func TestReservedWindowsName(t *testing.T) {
 	if got := filenameToken("CON", "[!]"); got == "CON" { t.Fatal("reserved Windows name was not sanitized") }
 }
 
-func TestReserveOutputPathConflict(t *testing.T) {
+func TestCreateOutputFileConflict(t *testing.T) {
 	dir := t.TempDir()
-	first, err := reserveOutputPath(dir+"\\shot.png", false)
+	requested := dir + string(os.PathSeparator) + "shot.png"
+	firstFile, firstPath, err := createOutputFile(requested, false)
 	if err != nil { t.Fatal(err) }
-	if err := os.WriteFile(first, []byte("first"), 0644); err != nil { t.Fatal(err) }
-	second, err := reserveOutputPath(dir+"\\shot.png", false)
+	if _, err := firstFile.Write([]byte("first")); err != nil { t.Fatal(err) }
+	if err := firstFile.Close(); err != nil { t.Fatal(err) }
+	secondFile, secondPath, err := createOutputFile(requested, false)
 	if err != nil { t.Fatal(err) }
-	if !strings.HasSuffix(second, "shot-conflict01.png") { t.Fatalf("unexpected conflict path: %s", second) }
+	defer secondFile.Close()
+	if !strings.HasSuffix(secondPath, "shot-conflict01.png") { t.Fatalf("unexpected conflict path: %s", secondPath) }
+	if firstPath == secondPath { t.Fatal("conflict path must be unique") }
+}
+
+func TestCreateOutputFileOverwrite(t *testing.T) {
+	path := t.TempDir() + string(os.PathSeparator) + "shot.png"
+	if err := os.WriteFile(path, []byte("old data"), 0600); err != nil { t.Fatal(err) }
+	f, got, err := createOutputFile(path, true)
+	if err != nil { t.Fatal(err) }
+	defer f.Close()
+	if got != path { t.Fatalf("got %q, want %q", got, path) }
+	if info, err := f.Stat(); err != nil || info.Size() != 0 { t.Fatalf("file was not truncated: info=%v err=%v", info, err) }
 }
