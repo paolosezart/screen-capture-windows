@@ -63,13 +63,13 @@ ScreenShotCli.exe --version
 Захватить активное окно целиком:
 
 ~~~bat
-ScreenShotCli.exe --active-window --output "%USERPROFILE%\\Pictures\\active-[YYYY][MM][dd]_[HH][mm][ss].png"
+ScreenShotCli.exe --active-window --output "%USERPROFILE%\Pictures\\active-[YYYY][MM][dd]_[HH][mm][ss].png"
 ~~~
 
 Если программа запускается из BAT-файла или консоли, сначала активным может оказаться само окно консоли. Добавь задержку и за это время щёлкни по целевому приложению:
 
 ~~~bat
-ScreenShotCli.exe --active-window --delay 5 --output "%USERPROFILE%\\Pictures\\window.png"
+ScreenShotCli.exe --active-window --delay 5 --output "%USERPROFILE%\Pictures\\window.png"
 ~~~
 
 После задержки программа получает текущее foreground-окно. Если это классическое окно консоли, из которой запущена утилита, захват прекращается с понятной ошибкой вместо сохранения скриншота консоли.
