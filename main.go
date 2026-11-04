@@ -86,6 +86,8 @@ func run() error {
 	overwrite := flag.Bool("overwrite", false, "разрешить перезапись существующего файла")
 	sanitizeChar := flag.String("sanitize-char", "[!]", "замена недопустимых символов в динамических частях имени")
 	showVersion := flag.Bool("version", false, "показать версию")
+	activeWindow := flag.Bool("active-window", false, "захватить активное окно вместо прямоугольной области")
+	delay := flag.Int("delay", 0, "задержка перед захватом в секундах (0–3600)")
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "ScreenShotCli — снимок прямоугольной области рабочего стола Windows")
 		fmt.Fprintln(flag.CommandLine.Output(), "")
@@ -99,6 +101,8 @@ func run() error {
 		_, _ = io.WriteString(flag.CommandLine.Output(), "Переменные окружения: %TEMP%, %USERPROFILE% и другие существующие переменные.\n")
 		fmt.Fprintln(flag.CommandLine.Output(), "Если имя уже занято, добавляется -conflict01, -conflict02 и т.д.")
 		fmt.Fprintln(flag.CommandLine.Output(), "Папки назначения автоматически не создаются.")
+		fmt.Fprintln(flag.CommandLine.Output(), "Для --active-window можно использовать --delay 5, чтобы успеть переключиться на нужное окно.")
+		fmt.Fprintln(flag.CommandLine.Output(), "Захват окна не активирует и не восстанавливает его; используется PrintWindow с экранным резервным захватом.")
 	}
 	flag.Parse()
 
@@ -109,14 +113,19 @@ func run() error {
 	if flag.NArg() != 0 {
 		return fmt.Errorf("лишние аргументы: %v", flag.Args())
 	}
-	if *width <= 0 || *height <= 0 {
-		return errors.New("--width и --height должны быть больше нуля")
+	if *delay < 0 || *delay > 3600 {
+		return errors.New("--delay должен быть в диапазоне от 0 до 3600 секунд")
 	}
-	if *width > 16384 || *height > 16384 {
-		return errors.New("максимальный размер каждой стороны — 16384 пикселя")
-	}
-	if int64(*width)*int64(*height) > 100_000_000 {
-		return errors.New("область слишком большая: максимум 100 000 000 пикселей")
+	if !*activeWindow {
+		if *width <= 0 || *height <= 0 {
+			return errors.New("--width и --height должны быть больше нуля")
+		}
+		if *width > 16384 || *height > 16384 {
+			return errors.New("максимальный размер каждой стороны — 16384 пикселя")
+		}
+		if int64(*width)*int64(*height) > 100_000_000 {
+			return errors.New("область слишком большая: максимум 100 000 000 пикселей")
+		}
 	}
 	if *output == "" {
 		return errors.New("не задан путь --output")
@@ -126,24 +135,39 @@ func run() error {
 	defer runtime.UnlockOSThread()
 	enableDPIAwareness()
 
-	left := int32(getSystemMetric(smXVirtualScreen))
-	top := int32(getSystemMetric(smYVirtualScreen))
-	desktopWidth := int32(getSystemMetric(smCXVirtualScreen))
-	desktopHeight := int32(getSystemMetric(smCYVirtualScreen))
-	right := int64(left) + int64(desktopWidth)
-	bottom := int64(top) + int64(desktopHeight)
-	if int64(*x) < int64(left) || int64(*y) < int64(top) ||
-		int64(*x)+int64(*width) > right || int64(*y)+int64(*height) > bottom {
-		return fmt.Errorf("область выходит за границы виртуального рабочего стола (X=%d, Y=%d, ширина=%d, высота=%d)", left, top, desktopWidth, desktopHeight)
+	if *delay > 0 {
+		fmt.Printf("Захват начнётся через %d сек. Переключись на нужное окно.\n", *delay)
+		time.Sleep(time.Duration(*delay) * time.Second)
 	}
 
-	img, err := capture(*x, *y, *width, *height)
+	var (
+		img *image.RGBA
+		captureX, captureY, captureWidth, captureHeight int
+		outputLabel = "desktop"
+		err error
+	)
+	if *activeWindow {
+		img, captureX, captureY, captureWidth, captureHeight, outputLabel, err = captureForegroundWindow()
+	} else {
+		left := int32(getSystemMetric(smXVirtualScreen))
+		top := int32(getSystemMetric(smYVirtualScreen))
+		desktopWidth := int32(getSystemMetric(smCXVirtualScreen))
+		desktopHeight := int32(getSystemMetric(smCYVirtualScreen))
+		right := int64(left) + int64(desktopWidth)
+		bottom := int64(top) + int64(desktopHeight)
+		if int64(*x) < int64(left) || int64(*y) < int64(top) ||
+			int64(*x)+int64(*width) > right || int64(*y)+int64(*height) > bottom {
+			return fmt.Errorf("область выходит за границы виртуального рабочего стола (X=%d, Y=%d, ширина=%d, высота=%d)", left, top, desktopWidth, desktopHeight)
+		}
+		img, err = capture(*x, *y, *width, *height)
+		captureX, captureY, captureWidth, captureHeight = *x, *y, *width, *height
+	}
 	if err != nil {
 		return err
 	}
 
-	now := time.Now()
-	expanded, err := expandOutputTemplate(*output, "desktop", "ScreenShotCli.exe", *sanitizeChar, now)
+now := time.Now()
+	expanded, err := expandOutputTemplate(*output, outputLabel, "ScreenShotCli.exe", *sanitizeChar, now)
 	if err != nil {
 		return err
 	}
@@ -176,7 +200,7 @@ func run() error {
 	}
 	fmt.Println("Скриншот сохранён.")
 	fmt.Println("Файл:", actualPath)
-	fmt.Printf("Область: X=%d, Y=%d, ширина=%d, высота=%d\n", *x, *y, *width, *height)
+	fmt.Printf("Область: X=%d, Y=%d, ширина=%d, высота=%d\n", captureX, captureY, captureWidth, captureHeight)
 	fmt.Println("Формат: PNG")
 	return nil
 }
