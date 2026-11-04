@@ -73,15 +73,16 @@ func captureWindow(hwnd uintptr) (*image.RGBA, int, int, int, int, string, error
 		return nil, 0, 0, 0, 0, "", lastError("CreateCompatibleDC")
 	}
 	defer procDeleteDC.Call(memoryDC)
-	bitmap, _, _ := procCreateCompatibleBitmap.Call(screenDC, uintptr(width), uintptr(height))
-	if bitmap == 0 {
-		return nil, 0, 0, 0, 0, "", lastError("CreateCompatibleBitmap")
+	bitmap, pixels, err := createDIBBitmap(screenDC, width, height)
+	if err != nil {
+		return nil, 0, 0, 0, 0, "", err
 	}
 	defer procDeleteObject.Call(bitmap)
 	oldObject, _, _ := procSelectObject.Call(memoryDC, bitmap)
 	if oldObject == 0 || oldObject == ^uintptr(0) {
 		return nil, 0, 0, 0, 0, "", lastError("SelectObject")
 	}
+	defer procSelectObject.Call(memoryDC, oldObject)
 	printed, _, _ := procPrintWindow.Call(hwnd, memoryDC, pwRenderFullContent)
 	if printed == 0 {
 		// Резервный путь снимает видимую часть окна с экрана и учитывает перекрытия другими окнами.
@@ -93,24 +94,7 @@ func captureWindow(hwnd uintptr) (*image.RGBA, int, int, int, int, string, error
 		}
 		fmt.Fprintln(os.Stderr, "ВНИМАНИЕ: PrintWindow не поддержан окном; использован захват с экрана, перекрытые части могут содержать другие окна.")
 	}
-	procSelectObject.Call(memoryDC, oldObject)
-	pixels := make([]byte, width*height*4)
-	info := bitmapInfo{Header: bitmapInfoHeader{
-		Size: uint32(unsafe.Sizeof(bitmapInfoHeader{})), Width: int32(width), Height: -int32(height),
-		Planes: 1, BitCount: 32, Compression: biRGB, SizeImage: uint32(len(pixels)),
-	}}
-	lines, _, _ := procGetDIBits.Call(memoryDC, bitmap, 0, uintptr(height),
-		uintptr(unsafe.Pointer(&pixels[0])), uintptr(unsafe.Pointer(&info)), dibRGBColors)
-	if lines == 0 || lines != uintptr(height) {
-		return nil, 0, 0, 0, 0, "", lastError("GetDIBits")
-	}
-	img := image.NewRGBA(image.Rect(0, 0, width, height))
-	for i := 0; i < len(pixels); i += 4 {
-		img.Pix[i] = pixels[i+2]
-		img.Pix[i+1] = pixels[i+1]
-		img.Pix[i+2] = pixels[i]
-		img.Pix[i+3] = 255
-	}
+	img := imageFromBGRA(pixels, width, height)
 	title := readWindowTitle(hwnd)
 	if title == "" {
 		title = "active-window"
