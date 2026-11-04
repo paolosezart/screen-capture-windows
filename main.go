@@ -166,7 +166,7 @@ func run() error {
 		return err
 	}
 
-now := time.Now()
+	now := time.Now()
 	expanded, err := expandOutputTemplate(*output, outputLabel, "ScreenShotCli.exe", *sanitizeChar, now)
 	if err != nil {
 		return err
