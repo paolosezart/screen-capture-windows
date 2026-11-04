@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"image"
 	"os"
-		"strings"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 )
