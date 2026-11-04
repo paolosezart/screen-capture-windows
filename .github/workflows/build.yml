@@ -9,6 +9,7 @@ on:
       - dev
       - go-rewrite
       - windows-automation-features
+      - active-window-capture
     tags:
       - "v*"
 
