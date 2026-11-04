@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"image"
 	"os"
-	"runtime"
-	"strings"
+		"strings"
 	"syscall"
 	"unsafe"
 )
@@ -41,9 +40,9 @@ func captureForegroundWindow() (*image.RGBA, int, int, int, int, string, error) 
 		return nil, 0, 0, 0, 0, "", fmt.Errorf("активное окно не отображается")
 	}
 	var rect windowRect
-	ok, _, callErr := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rect)))
+	ok, _, _ := procGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rect)))
 	if ok == 0 {
-		return nil, 0, 0, 0, 0, "", fmt.Errorf("GetWindowRect: %v", callErr)
+		return nil, 0, 0, 0, 0, "", lastError("GetWindowRect")
 	}
 	width := int(rect.Right - rect.Left)
 	height := int(rect.Bottom - rect.Top)
@@ -54,9 +53,7 @@ func captureForegroundWindow() (*image.RGBA, int, int, int, int, string, error) 
 		return nil, 0, 0, 0, 0, "", fmt.Errorf("активное окно слишком большое: %dx%d", width, height)
 	}
 
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	screenDC, _, _ := procGetDC.Call(0)
+ 	screenDC, _, _ := procGetDC.Call(0)
 	if screenDC == 0 {
 		return nil, 0, 0, 0, 0, "", lastError("GetDC")
 	}
