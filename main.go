@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -87,6 +88,8 @@ func run() error {
 	sanitizeChar := flag.String("sanitize-char", "[!]", "замена недопустимых символов в динамических частях имени")
 	showVersion := flag.Bool("version", false, "показать версию")
 	activeWindow := flag.Bool("active-window", false, "захватить активное окно вместо прямоугольной области")
+	windowTitle := flag.String("window-title", "", "найти окно по части заголовка (без учёта регистра)")
+	processName := flag.String("process", "", "найти окно по имени EXE-процесса")
 	delay := flag.Int("delay", 0, "задержка перед захватом в секундах (0–3600)")
 	flag.Usage = func() {
 		fmt.Fprintln(flag.CommandLine.Output(), "ScreenShotCli — снимок прямоугольной области рабочего стола Windows")
@@ -103,6 +106,8 @@ func run() error {
 		fmt.Fprintln(flag.CommandLine.Output(), "  --overwrite             разрешить перезапись существующего файла")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --sanitize-char string  замена недопустимых символов (по умолчанию [!])")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --active-window         захватить активное окно вместо прямоугольной области")
+		fmt.Fprintln(flag.CommandLine.Output(), "  --window-title string   найти окно по части заголовка")
+		fmt.Fprintln(flag.CommandLine.Output(), "  --process string        найти окно по имени EXE-процесса")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --delay int             задержка перед захватом в секундах (0–3600)")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --version               показать версию")
 		fmt.Fprintln(flag.CommandLine.Output(), "  --help                  показать эту справку")
@@ -126,7 +131,14 @@ func run() error {
 	if *delay < 0 || *delay > 3600 {
 		return errors.New("--delay должен быть в диапазоне от 0 до 3600 секунд")
 	}
-	if !*activeWindow {
+	if *activeWindow && (*windowTitle != "" || *processName != "") {
+		return errors.New("--active-window нельзя сочетать с --window-title или --process")
+	}
+	if *windowTitle != "" && *processName != "" {
+		return errors.New("--window-title и --process нельзя использовать одновременно")
+	}
+	windowCapture := *activeWindow || *windowTitle != "" || *processName != ""
+	if !windowCapture {
 		if *width <= 0 || *height <= 0 {
 			return errors.New("--width и --height должны быть больше нуля")
 		}
@@ -156,8 +168,16 @@ func run() error {
 		outputLabel = "desktop"
 		err error
 	)
-	if *activeWindow {
-		img, captureX, captureY, captureWidth, captureHeight, outputLabel, err = captureForegroundWindow()
+	if windowCapture {
+		if *windowTitle != "" || *processName != "" {
+			var hwnd uintptr
+			hwnd, err = findMatchingWindow(*windowTitle, *processName)
+			if err == nil {
+				img, captureX, captureY, captureWidth, captureHeight, outputLabel, err = captureWindow(hwnd)
+			}
+		} else {
+			img, captureX, captureY, captureWidth, captureHeight, outputLabel, err = captureForegroundWindow()
+		}
 	} else {
 		left := int32(getSystemMetric(smXVirtualScreen))
 		top := int32(getSystemMetric(smYVirtualScreen))
