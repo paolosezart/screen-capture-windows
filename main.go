@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"syscall"
-	"strings"
 	"time"
 	"unsafe"
 )
